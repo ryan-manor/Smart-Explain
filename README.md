@@ -9,6 +9,7 @@ An [Obsidian](https://obsidian.md) plugin that gives you AI-powered explanations
 - **Right-click or hotkey** — access via the editor context menu ("Smart Explain") or assign a keyboard shortcut through Obsidian's hotkeys settings
 - **Markdown rendering** — responses are rendered as full Obsidian markdown (bold, lists, code blocks, etc.)
 - **Click outside to dismiss** — lightweight, non-intrusive UX
+- **Secure key storage** — your API key is kept in Obsidian's encrypted keychain (Secret Storage), never in plaintext in the plugin's `data.json`
 
 ## Installation
 
@@ -33,7 +34,20 @@ Then copy `main.js`, `manifest.json`, and `styles.css` into your vault's `.obsid
 ## Setup
 
 1. Get a free Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey).
-2. Open **Settings → Smart Explain** and paste your API key.
+2. Open **Settings → Smart Explain** and paste your API key into the **Gemini API Key** field.
+
+That's it — the field writes your key directly into Obsidian's keychain.
+
+### Where your key is stored
+
+Smart Explain uses Obsidian's built-in [Secret Storage](https://docs.obsidian.md/plugins/guides/secret-storage) (added in Obsidian 1.11.4), the same store surfaced under **Settings → Keychain**. The key is encrypted at rest via the OS keychain and is **never** written to the plugin's `data.json`, so it won't end up in plaintext in a synced or backed-up file.
+
+A few consequences worth knowing:
+
+- **Keys are per-device and do not sync.** Secret Storage is local to each device and vault. Set your API key once on each desktop where you use the plugin.
+- **Desktop only.** Secret Storage requires the OS keychain, which is unavailable on mobile (iOS/Android). On mobile the settings tab shows a notice instead of a key field; configure the key on a desktop device.
+- **Upgrading from an older version?** If you previously stored your key in `data.json`, Smart Explain migrates it into the keychain automatically on first load (after verifying the write succeeded) and then removes the plaintext copy. To rotate the key afterward, just paste a new one into the settings field.
+- **Removing the key.** The Secret Storage API can set but not delete entries; to fully remove a stored key, use **Settings → Keychain** in Obsidian.
 
 ## Usage
 
@@ -65,7 +79,7 @@ src/
 ├── GeminiClient.ts      # Gemini API wrapper (streaming + non-streaming)
 ├── ExplainModal.ts      # Positioned popover with live markdown rendering
 ├── ContextExtractor.ts  # Extracts heading path, surrounding text, note title
-└── SettingsTab.ts       # Settings UI for the API key
+└── SettingsTab.ts       # Settings UI; reads/writes the API key via Obsidian's keychain
 ```
 
 ## License

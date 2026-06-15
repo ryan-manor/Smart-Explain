@@ -1,1 +1,7 @@
 node_modules/
+
+# Per-vault runtime state — may contain secrets, never commit
+data.json
+
+# macOS
+.DS_Store

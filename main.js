@@ -1348,9 +1348,8 @@ function extractHeadingPath(content, cursorLine) {
 
 // src/SettingsTab.ts
 var import_obsidian2 = require("obsidian");
-var DEFAULT_SETTINGS = {
-  apiKey: ""
-};
+var GEMINI_SECRET_ID = "gemini-api-key";
+var DEFAULT_SETTINGS = {};
 var SmartExplainSettingsTab = class extends import_obsidian2.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
@@ -1360,12 +1359,22 @@ var SmartExplainSettingsTab = class extends import_obsidian2.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl("h2", { text: "Smart Explain Settings" });
-    new import_obsidian2.Setting(containerEl).setName("Gemini API Key").setDesc("Enter your Google Gemini API key. Get one at https://aistudio.google.com/apikey").addText(
-      (text) => text.setPlaceholder("Enter your API key").setValue(this.plugin.settings.apiKey).onChange(async (value) => {
-        this.plugin.settings.apiKey = value;
-        await this.plugin.saveSettings();
-      })
-    );
+    const secretStorage = this.app.secretStorage;
+    if (!secretStorage) {
+      new import_obsidian2.Setting(containerEl).setName("Gemini API Key").setDesc(
+        "Secure key storage is only available on desktop. Open Smart Explain settings on a desktop device to set your key."
+      );
+      return;
+    }
+    new import_obsidian2.Setting(containerEl).setName("Gemini API Key").setDesc(
+      "Stored securely in Obsidian\u2019s keychain, not in this plugin\u2019s data file. Get a key at https://aistudio.google.com/apikey"
+    ).addText((text) => {
+      var _a;
+      text.inputEl.type = "password";
+      text.setPlaceholder("Enter your API key").setValue((_a = secretStorage.getSecret(GEMINI_SECRET_ID)) != null ? _a : "").onChange((value) => {
+        secretStorage.setSecret(GEMINI_SECRET_ID, value.trim());
+      });
+    });
   }
 };
 
@@ -1373,6 +1382,7 @@ var SmartExplainSettingsTab = class extends import_obsidian2.PluginSettingTab {
 var SmartExplainPlugin = class extends import_obsidian3.Plugin {
   async onload() {
     await this.loadSettings();
+    await this.migrateApiKeyToSecretStorage();
     this.addSettingTab(new SmartExplainSettingsTab(this.app, this));
     this.registerEvent(
       this.app.workspace.on("editor-menu", (menu, editor, view) => {
@@ -1398,7 +1408,8 @@ var SmartExplainPlugin = class extends import_obsidian3.Plugin {
     });
   }
   async explainSelection(editor, view) {
-    if (!this.settings.apiKey) {
+    const apiKey = this.getApiKey();
+    if (!apiKey) {
       new import_obsidian3.Notice("Please set your Gemini API key in Smart Explain settings");
       return;
     }
@@ -1406,10 +1417,10 @@ var SmartExplainPlugin = class extends import_obsidian3.Plugin {
     const context = extractContext(editor, view);
     const selectedText = editor.getSelection();
     const selectionEnd = editor.getCursor("to");
-    const modal = new ExplainModal(this.app, coords, editor, view, selectedText, this.settings.apiKey, selectionEnd);
+    const modal = new ExplainModal(this.app, coords, editor, view, selectedText, apiKey, selectionEnd);
     modal.open();
     try {
-      const client = new GeminiClient(this.settings.apiKey);
+      const client = new GeminiClient(apiKey);
       modal.startStreaming();
       for await (const chunk of client.explainStream(context)) {
         modal.appendChunk(chunk);
@@ -1457,6 +1468,50 @@ var SmartExplainPlugin = class extends import_obsidian3.Plugin {
   }
   async saveSettings() {
     await this.saveData(this.settings);
+  }
+  /**
+   * Resolve the Gemini key. Prefers Obsidian's secure keychain; falls back to
+   * the legacy plaintext setting only on platforms/versions without secret
+   * storage, or in the brief window before migration completes.
+   */
+  getApiKey() {
+    var _a;
+    const secretStorage = this.app.secretStorage;
+    if (secretStorage) {
+      const secret = secretStorage.getSecret(GEMINI_SECRET_ID);
+      if (secret)
+        return secret;
+    }
+    return (_a = this.settings.apiKey) != null ? _a : "";
+  }
+  /**
+   * One-time move of the plaintext key from data.json into Obsidian's secret
+   * storage. Read-back verifies the secret persisted BEFORE deleting the only
+   * plaintext copy, so a silent write failure can never lose the key. No-ops on
+   * platforms without secret storage (e.g. mobile).
+   */
+  async migrateApiKeyToSecretStorage() {
+    const secretStorage = this.app.secretStorage;
+    if (!secretStorage || typeof secretStorage.setSecret !== "function")
+      return;
+    const legacy = this.settings.apiKey;
+    if (!legacy)
+      return;
+    if (!secretStorage.getSecret(GEMINI_SECRET_ID)) {
+      try {
+        secretStorage.setSecret(GEMINI_SECRET_ID, legacy);
+      } catch (e) {
+        console.error("Smart Explain: failed to write key to secret storage", e);
+        return;
+      }
+      if (secretStorage.getSecret(GEMINI_SECRET_ID) !== legacy) {
+        console.error("Smart Explain: secret read-back failed; keeping plaintext key");
+        return;
+      }
+    }
+    delete this.settings.apiKey;
+    await this.saveSettings();
+    new import_obsidian3.Notice("Smart Explain: API key moved to Obsidian secure storage");
   }
 };
 /*! Bundled license information:

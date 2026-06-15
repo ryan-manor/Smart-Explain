@@ -2,13 +2,14 @@ import { Editor, MarkdownView, Notice, Plugin } from 'obsidian';
 import { ExplainModal } from './ExplainModal';
 import { GeminiClient } from './GeminiClient';
 import { extractContext } from './ContextExtractor';
-import { SmartExplainSettings, DEFAULT_SETTINGS, SmartExplainSettingsTab } from './SettingsTab';
+import { SmartExplainSettings, DEFAULT_SETTINGS, SmartExplainSettingsTab, GEMINI_SECRET_ID } from './SettingsTab';
 
 export default class SmartExplainPlugin extends Plugin {
   settings: SmartExplainSettings;
 
   async onload() {
     await this.loadSettings();
+    await this.migrateApiKeyToSecretStorage();
 
     // Add settings tab
     this.addSettingTab(new SmartExplainSettingsTab(this.app, this));
@@ -44,7 +45,8 @@ export default class SmartExplainPlugin extends Plugin {
 
   async explainSelection(editor: Editor, view: MarkdownView) {
     // Check for API key
-    if (!this.settings.apiKey) {
+    const apiKey = this.getApiKey();
+    if (!apiKey) {
       new Notice('Please set your Gemini API key in Smart Explain settings');
       return;
     }
@@ -60,11 +62,11 @@ export default class SmartExplainPlugin extends Plugin {
     const selectionEnd = editor.getCursor('to');
 
     // Create and show modal with loading state
-    const modal = new ExplainModal(this.app, coords, editor, view, selectedText, this.settings.apiKey, selectionEnd);
+    const modal = new ExplainModal(this.app, coords, editor, view, selectedText, apiKey, selectionEnd);
     modal.open();
 
     try {
-      const client = new GeminiClient(this.settings.apiKey);
+      const client = new GeminiClient(apiKey);
 
       // Start streaming - shows empty content area ready for chunks
       modal.startStreaming();
@@ -131,5 +133,51 @@ export default class SmartExplainPlugin extends Plugin {
 
   async saveSettings() {
     await this.saveData(this.settings);
+  }
+
+  /**
+   * Resolve the Gemini key. Prefers Obsidian's secure keychain; falls back to
+   * the legacy plaintext setting only on platforms/versions without secret
+   * storage, or in the brief window before migration completes.
+   */
+  getApiKey(): string {
+    const secretStorage = this.app.secretStorage;
+    if (secretStorage) {
+      const secret = secretStorage.getSecret(GEMINI_SECRET_ID);
+      if (secret) return secret;
+    }
+    return this.settings.apiKey ?? '';
+  }
+
+  /**
+   * One-time move of the plaintext key from data.json into Obsidian's secret
+   * storage. Read-back verifies the secret persisted BEFORE deleting the only
+   * plaintext copy, so a silent write failure can never lose the key. No-ops on
+   * platforms without secret storage (e.g. mobile).
+   */
+  async migrateApiKeyToSecretStorage() {
+    const secretStorage = this.app.secretStorage;
+    if (!secretStorage || typeof secretStorage.setSecret !== 'function') return;
+
+    const legacy = this.settings.apiKey;
+    if (!legacy) return; // nothing to migrate
+
+    // If a secret already exists, just strip the stale plaintext copy.
+    if (!secretStorage.getSecret(GEMINI_SECRET_ID)) {
+      try {
+        secretStorage.setSecret(GEMINI_SECRET_ID, legacy);
+      } catch (e) {
+        console.error('Smart Explain: failed to write key to secret storage', e);
+        return;
+      }
+      if (secretStorage.getSecret(GEMINI_SECRET_ID) !== legacy) {
+        console.error('Smart Explain: secret read-back failed; keeping plaintext key');
+        return;
+      }
+    }
+
+    delete this.settings.apiKey;
+    await this.saveSettings();
+    new Notice('Smart Explain: API key moved to Obsidian secure storage');
   }
 }
