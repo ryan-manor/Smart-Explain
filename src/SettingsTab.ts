@@ -1,9 +1,14 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import type SmartExplainPlugin from './main';
 
-// Shared secret ID in Obsidian's keychain. Must be lowercase alphanumeric with
-// optional dashes. Named generically so other plugins could reuse the same key.
-export const GEMINI_SECRET_ID = 'gemini-api-key';
+// Plugin-scoped secret ID in Obsidian's keychain. Must be lowercase
+// alphanumeric with optional dashes. Scoped to this plugin so it can't collide
+// with (or be read by) other plugins sharing the keychain namespace.
+export const SECRET_ID = 'smart-explain-gemini-key';
+
+// Previous, vault-shared ID. Read once during migration so existing installs
+// don't appear to lose their key when upgrading to the scoped ID.
+export const LEGACY_SHARED_SECRET_ID = 'gemini-api-key';
 
 export interface SmartExplainSettings {
   // Legacy plaintext key. Retained ONLY so loadSettings() can migrate it into
@@ -52,9 +57,9 @@ export class SmartExplainSettingsTab extends PluginSettingTab {
         text.inputEl.type = 'password';
         text
           .setPlaceholder('Enter your API key')
-          .setValue(secretStorage.getSecret(GEMINI_SECRET_ID) ?? '')
+          .setValue(secretStorage.getSecret(SECRET_ID) ?? '')
           .onChange((value) => {
-            secretStorage.setSecret(GEMINI_SECRET_ID, value.trim());
+            secretStorage.setSecret(SECRET_ID, value.trim());
           });
       });
   }

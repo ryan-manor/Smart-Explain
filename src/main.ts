@@ -2,7 +2,7 @@ import { Editor, MarkdownView, Notice, Plugin } from 'obsidian';
 import { ExplainModal } from './ExplainModal';
 import { GeminiClient } from './GeminiClient';
 import { extractContext } from './ContextExtractor';
-import { SmartExplainSettings, DEFAULT_SETTINGS, SmartExplainSettingsTab, GEMINI_SECRET_ID } from './SettingsTab';
+import { SmartExplainSettings, DEFAULT_SETTINGS, SmartExplainSettingsTab, SECRET_ID, LEGACY_SHARED_SECRET_ID } from './SettingsTab';
 
 export default class SmartExplainPlugin extends Plugin {
   settings: SmartExplainSettings;
@@ -143,41 +143,55 @@ export default class SmartExplainPlugin extends Plugin {
   getApiKey(): string {
     const secretStorage = this.app.secretStorage;
     if (secretStorage) {
-      const secret = secretStorage.getSecret(GEMINI_SECRET_ID);
+      const secret = secretStorage.getSecret(SECRET_ID);
       if (secret) return secret;
     }
     return this.settings.apiKey ?? '';
   }
 
   /**
-   * One-time move of the plaintext key from data.json into Obsidian's secret
-   * storage. Read-back verifies the secret persisted BEFORE deleting the only
-   * plaintext copy, so a silent write failure can never lose the key. No-ops on
-   * platforms without secret storage (e.g. mobile).
+   * One-time move of the key into this plugin's scoped keychain entry.
+   * Legacy sources, in priority order: the old vault-shared keychain ID, then
+   * the plaintext data.json key. Read-back verifies the scoped secret persisted
+   * BEFORE deleting the plaintext copy, so a silent write failure can never
+   * lose the key. No-ops on platforms without secret storage (e.g. mobile).
+   *
+   * Note: the old shared entry is left in place (the Secret Storage API has no
+   * delete, and it may be shared) — remove it via Settings → Keychain.
    */
   async migrateApiKeyToSecretStorage() {
     const secretStorage = this.app.secretStorage;
     if (!secretStorage || typeof secretStorage.setSecret !== 'function') return;
 
-    const legacy = this.settings.apiKey;
-    if (!legacy) return; // nothing to migrate
-
-    // If a secret already exists, just strip the stale plaintext copy.
-    if (!secretStorage.getSecret(GEMINI_SECRET_ID)) {
-      try {
-        secretStorage.setSecret(GEMINI_SECRET_ID, legacy);
-      } catch (e) {
-        console.error('Smart Explain: failed to write key to secret storage', e);
-        return;
+    // Already on the scoped key — only chore left is dropping stale plaintext.
+    if (secretStorage.getSecret(SECRET_ID)) {
+      if (this.settings.apiKey) {
+        delete this.settings.apiKey;
+        await this.saveSettings();
       }
-      if (secretStorage.getSecret(GEMINI_SECRET_ID) !== legacy) {
-        console.error('Smart Explain: secret read-back failed; keeping plaintext key');
-        return;
-      }
+      return;
     }
 
-    delete this.settings.apiKey;
-    await this.saveSettings();
-    new Notice('Smart Explain: API key moved to Obsidian secure storage');
+    // Prefer the old shared keychain entry, then fall back to plaintext.
+    const legacy = secretStorage.getSecret(LEGACY_SHARED_SECRET_ID) ?? this.settings.apiKey;
+    if (!legacy) return; // nothing to migrate
+
+    try {
+      secretStorage.setSecret(SECRET_ID, legacy);
+    } catch (e) {
+      console.error('Smart Explain: failed to write key to secret storage', e);
+      return;
+    }
+    if (secretStorage.getSecret(SECRET_ID) !== legacy) {
+      console.error('Smart Explain: secret read-back failed; keeping legacy key');
+      return;
+    }
+
+    // Scoped key is safely stored; drop the plaintext copy if any.
+    if (this.settings.apiKey) {
+      delete this.settings.apiKey;
+      await this.saveSettings();
+    }
+    new Notice('Smart Explain: API key moved to plugin-scoped secure storage');
   }
 }

@@ -1348,7 +1348,8 @@ function extractHeadingPath(content, cursorLine) {
 
 // src/SettingsTab.ts
 var import_obsidian2 = require("obsidian");
-var GEMINI_SECRET_ID = "gemini-api-key";
+var SECRET_ID = "smart-explain-gemini-key";
+var LEGACY_SHARED_SECRET_ID = "gemini-api-key";
 var DEFAULT_SETTINGS = {};
 var SmartExplainSettingsTab = class extends import_obsidian2.PluginSettingTab {
   constructor(app, plugin) {
@@ -1371,8 +1372,8 @@ var SmartExplainSettingsTab = class extends import_obsidian2.PluginSettingTab {
     ).addText((text) => {
       var _a;
       text.inputEl.type = "password";
-      text.setPlaceholder("Enter your API key").setValue((_a = secretStorage.getSecret(GEMINI_SECRET_ID)) != null ? _a : "").onChange((value) => {
-        secretStorage.setSecret(GEMINI_SECRET_ID, value.trim());
+      text.setPlaceholder("Enter your API key").setValue((_a = secretStorage.getSecret(SECRET_ID)) != null ? _a : "").onChange((value) => {
+        secretStorage.setSecret(SECRET_ID, value.trim());
       });
     });
   }
@@ -1478,40 +1479,52 @@ var SmartExplainPlugin = class extends import_obsidian3.Plugin {
     var _a;
     const secretStorage = this.app.secretStorage;
     if (secretStorage) {
-      const secret = secretStorage.getSecret(GEMINI_SECRET_ID);
+      const secret = secretStorage.getSecret(SECRET_ID);
       if (secret)
         return secret;
     }
     return (_a = this.settings.apiKey) != null ? _a : "";
   }
   /**
-   * One-time move of the plaintext key from data.json into Obsidian's secret
-   * storage. Read-back verifies the secret persisted BEFORE deleting the only
-   * plaintext copy, so a silent write failure can never lose the key. No-ops on
-   * platforms without secret storage (e.g. mobile).
+   * One-time move of the key into this plugin's scoped keychain entry.
+   * Legacy sources, in priority order: the old vault-shared keychain ID, then
+   * the plaintext data.json key. Read-back verifies the scoped secret persisted
+   * BEFORE deleting the plaintext copy, so a silent write failure can never
+   * lose the key. No-ops on platforms without secret storage (e.g. mobile).
+   *
+   * Note: the old shared entry is left in place (the Secret Storage API has no
+   * delete, and it may be shared) — remove it via Settings → Keychain.
    */
   async migrateApiKeyToSecretStorage() {
+    var _a;
     const secretStorage = this.app.secretStorage;
     if (!secretStorage || typeof secretStorage.setSecret !== "function")
       return;
-    const legacy = this.settings.apiKey;
+    if (secretStorage.getSecret(SECRET_ID)) {
+      if (this.settings.apiKey) {
+        delete this.settings.apiKey;
+        await this.saveSettings();
+      }
+      return;
+    }
+    const legacy = (_a = secretStorage.getSecret(LEGACY_SHARED_SECRET_ID)) != null ? _a : this.settings.apiKey;
     if (!legacy)
       return;
-    if (!secretStorage.getSecret(GEMINI_SECRET_ID)) {
-      try {
-        secretStorage.setSecret(GEMINI_SECRET_ID, legacy);
-      } catch (e) {
-        console.error("Smart Explain: failed to write key to secret storage", e);
-        return;
-      }
-      if (secretStorage.getSecret(GEMINI_SECRET_ID) !== legacy) {
-        console.error("Smart Explain: secret read-back failed; keeping plaintext key");
-        return;
-      }
+    try {
+      secretStorage.setSecret(SECRET_ID, legacy);
+    } catch (e) {
+      console.error("Smart Explain: failed to write key to secret storage", e);
+      return;
     }
-    delete this.settings.apiKey;
-    await this.saveSettings();
-    new import_obsidian3.Notice("Smart Explain: API key moved to Obsidian secure storage");
+    if (secretStorage.getSecret(SECRET_ID) !== legacy) {
+      console.error("Smart Explain: secret read-back failed; keeping legacy key");
+      return;
+    }
+    if (this.settings.apiKey) {
+      delete this.settings.apiKey;
+      await this.saveSettings();
+    }
+    new import_obsidian3.Notice("Smart Explain: API key moved to plugin-scoped secure storage");
   }
 };
 /*! Bundled license information:

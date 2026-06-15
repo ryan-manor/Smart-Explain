@@ -1,7 +1,7 @@
 {
   "id": "smart-explain",
   "name": "Smart Explain",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "minAppVersion": "1.0.0",
   "description": "Select text and get AI-powered explanations via Gemini",
   "author": "You",

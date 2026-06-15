@@ -40,14 +40,14 @@ That's it — the field writes your key directly into Obsidian's keychain.
 
 ### Where your key is stored
 
-Smart Explain uses Obsidian's built-in [Secret Storage](https://docs.obsidian.md/plugins/guides/secret-storage) (added in Obsidian 1.11.4), the same store surfaced under **Settings → Keychain**. The key is encrypted at rest via the OS keychain and is **never** written to the plugin's `data.json`, so it won't end up in plaintext in a synced or backed-up file.
+Smart Explain uses Obsidian's built-in [Secret Storage](https://docs.obsidian.md/plugins/guides/secret-storage) (added in Obsidian 1.11.4), the same store surfaced under **Settings → Keychain**. The key is encrypted at rest via the OS keychain and is **never** written to the plugin's `data.json`, so it won't end up in plaintext in a synced or backed-up file. It's kept under a **plugin-scoped entry** (`smart-explain-gemini-key`) so it can't collide with — or be read by — other plugins that use the shared keychain namespace.
 
 A few consequences worth knowing:
 
 - **Keys are per-device and do not sync.** Secret Storage is local to each device and vault. Set your API key once on each desktop where you use the plugin.
 - **Desktop only.** Secret Storage requires the OS keychain, which is unavailable on mobile (iOS/Android). On mobile the settings tab shows a notice instead of a key field; configure the key on a desktop device.
-- **Upgrading from an older version?** If you previously stored your key in `data.json`, Smart Explain migrates it into the keychain automatically on first load (after verifying the write succeeded) and then removes the plaintext copy. To rotate the key afterward, just paste a new one into the settings field.
-- **Removing the key.** The Secret Storage API can set but not delete entries; to fully remove a stored key, use **Settings → Keychain** in Obsidian.
+- **Upgrading from an older version?** Smart Explain migrates your key into the plugin-scoped entry automatically on first load — from a plaintext `data.json` key, or from the earlier vault-shared `gemini-api-key` entry — after verifying the write succeeded, then removes any plaintext copy. To rotate the key afterward, just paste a new one into the settings field.
+- **Removing the key.** The Secret Storage API can set but not delete entries, so the plugin can't remove the old shared `gemini-api-key` entry left behind by an upgrade. To delete that (or any) stored key, use **Settings → Keychain** in Obsidian.
 
 ## Usage
 

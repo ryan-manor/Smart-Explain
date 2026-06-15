@@ -1,6 +1,6 @@
 {
   "name": "smart-explain",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Obsidian plugin for AI-powered text explanations",
   "main": "main.js",
   "scripts": {
