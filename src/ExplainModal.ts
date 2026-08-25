@@ -27,6 +27,7 @@ export class ExplainModal extends Modal {
   private selectedText: string;
   private apiKey: string;
   private selectionEnd: { line: number; ch: number };
+  private model: string;
 
   constructor(
     app: App,
@@ -35,7 +36,8 @@ export class ExplainModal extends Modal {
     view: MarkdownView,
     selectedText: string,
     apiKey: string,
-    selectionEnd: { line: number; ch: number }
+    selectionEnd: { line: number; ch: number },
+    model: string
   ) {
     super(app);
     this.targetCoords = coords;
@@ -44,6 +46,7 @@ export class ExplainModal extends Modal {
     this.selectedText = selectedText;
     this.apiKey = apiKey;
     this.selectionEnd = selectionEnd;
+    this.model = model;
     this.renderComponent = new Component();
 
     this.clickHandler = (e: MouseEvent) => {
@@ -220,7 +223,7 @@ export class ExplainModal extends Modal {
       btn.disabled = true;
       btn.textContent = 'Adding...';
 
-      const client = new GeminiClient(this.apiKey);
+      const client = new GeminiClient(this.apiKey, this.model);
       const oneSentence = await client.summarize(this.content);
 
       const editorContent = this.editor.getValue();

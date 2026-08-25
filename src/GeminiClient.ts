@@ -16,10 +16,14 @@ GUIDELINES:
 
 export class GeminiClient {
   private ai: GoogleGenerativeAI;
-  private model = 'gemini-3-flash-preview';
+  private model: string;
 
-  constructor(apiKey: string) {
+  // `model` is required, not defaulted, so every call site is forced to pass
+  // the configured ID — a defaulted param would let a site silently drift back
+  // to a hardcoded model.
+  constructor(apiKey: string, model: string) {
     this.ai = new GoogleGenerativeAI(apiKey);
+    this.model = model;
   }
 
   async explain(context: ExplainContext): Promise<string> {

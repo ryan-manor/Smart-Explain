@@ -1011,9 +1011,12 @@ GUIDELINES:
 - Do not use language like "this text is about", go directly to the explanation
 - Seperate different sections with a blank line`;
 var GeminiClient = class {
-  constructor(apiKey) {
-    this.model = "gemini-3-flash-preview";
+  // `model` is required, not defaulted, so every call site is forced to pass
+  // the configured ID — a defaulted param would let a site silently drift back
+  // to a hardcoded model.
+  constructor(apiKey, model) {
     this.ai = new GoogleGenerativeAI(apiKey);
+    this.model = model;
   }
   async explain(context) {
     const prompt = this.buildPrompt(context);
@@ -1121,7 +1124,7 @@ function findNextFootnoteNumber(editorContent) {
   return max + 1;
 }
 var ExplainModal = class extends import_obsidian.Modal {
-  constructor(app, coords, editor, view, selectedText, apiKey, selectionEnd) {
+  constructor(app, coords, editor, view, selectedText, apiKey, selectionEnd, model) {
     super(app);
     this.content = "";
     this.isLoading = true;
@@ -1135,6 +1138,7 @@ var ExplainModal = class extends import_obsidian.Modal {
     this.selectedText = selectedText;
     this.apiKey = apiKey;
     this.selectionEnd = selectionEnd;
+    this.model = model;
     this.renderComponent = new import_obsidian.Component();
     this.clickHandler = (e) => {
       setTimeout(() => {
@@ -1270,7 +1274,7 @@ var ExplainModal = class extends import_obsidian.Modal {
     try {
       btn.disabled = true;
       btn.textContent = "Adding...";
-      const client = new GeminiClient(this.apiKey);
+      const client = new GeminiClient(this.apiKey, this.model);
       const oneSentence = await client.summarize(this.content);
       const editorContent = this.editor.getValue();
       const footnoteNum = findNextFootnoteNumber(editorContent);
@@ -1350,7 +1354,10 @@ function extractHeadingPath(content, cursorLine) {
 var import_obsidian2 = require("obsidian");
 var SECRET_ID = "smart-explain-gemini-key";
 var LEGACY_SHARED_SECRET_ID = "gemini-api-key";
-var DEFAULT_SETTINGS = {};
+var DEFAULT_MODEL = "gemini-3.5-flash-lite";
+var DEFAULT_SETTINGS = {
+  model: DEFAULT_MODEL
+};
 var SmartExplainSettingsTab = class extends import_obsidian2.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
@@ -1360,20 +1367,35 @@ var SmartExplainSettingsTab = class extends import_obsidian2.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl("h2", { text: "Smart Explain Settings" });
+    this.displayApiKeySetting();
+    this.displayModelSetting();
+  }
+  displayApiKeySetting() {
     const secretStorage = this.app.secretStorage;
     if (!secretStorage) {
-      new import_obsidian2.Setting(containerEl).setName("Gemini API Key").setDesc(
+      new import_obsidian2.Setting(this.containerEl).setName("Gemini API Key").setDesc(
         "Secure key storage is only available on desktop. Open Smart Explain settings on a desktop device to set your key."
       );
       return;
     }
-    new import_obsidian2.Setting(containerEl).setName("Gemini API Key").setDesc(
+    new import_obsidian2.Setting(this.containerEl).setName("Gemini API Key").setDesc(
       "Stored securely in Obsidian\u2019s keychain, not in this plugin\u2019s data file. Get a key at https://aistudio.google.com/apikey"
     ).addText((text) => {
       var _a;
       text.inputEl.type = "password";
       text.setPlaceholder("Enter your API key").setValue((_a = secretStorage.getSecret(SECRET_ID)) != null ? _a : "").onChange((value) => {
         secretStorage.setSecret(SECRET_ID, value.trim());
+      });
+    });
+  }
+  displayModelSetting() {
+    new import_obsidian2.Setting(this.containerEl).setName("Model ID").setDesc(
+      `The Gemini model used for explanations and footnote summaries. Leave blank to use ${DEFAULT_MODEL}. Model IDs are listed at https://ai.google.dev/gemini-api/docs/models \u2014 pick one that supports the MINIMAL thinking level.`
+    ).addText((text) => {
+      var _a;
+      text.setPlaceholder(DEFAULT_MODEL).setValue((_a = this.plugin.settings.model) != null ? _a : "").onChange(async (value) => {
+        this.plugin.settings.model = value.trim();
+        await this.plugin.saveSettings();
       });
     });
   }
@@ -1418,10 +1440,11 @@ var SmartExplainPlugin = class extends import_obsidian3.Plugin {
     const context = extractContext(editor, view);
     const selectedText = editor.getSelection();
     const selectionEnd = editor.getCursor("to");
-    const modal = new ExplainModal(this.app, coords, editor, view, selectedText, apiKey, selectionEnd);
+    const model = this.getModel();
+    const modal = new ExplainModal(this.app, coords, editor, view, selectedText, apiKey, selectionEnd, model);
     modal.open();
     try {
-      const client = new GeminiClient(apiKey);
+      const client = new GeminiClient(apiKey, model);
       modal.startStreaming();
       for await (const chunk of client.explainStream(context)) {
         modal.appendChunk(chunk);
@@ -1484,6 +1507,15 @@ var SmartExplainPlugin = class extends import_obsidian3.Plugin {
         return secret;
     }
     return (_a = this.settings.apiKey) != null ? _a : "";
+  }
+  /**
+   * Resolve the Gemini model ID. The stored value can be blank (the settings
+   * field keeps whatever the user typed, including nothing), so fall back to
+   * the default rather than sending an empty model to the API.
+   */
+  getModel() {
+    var _a;
+    return ((_a = this.settings.model) == null ? void 0 : _a.trim()) || DEFAULT_MODEL;
   }
   /**
    * One-time move of the key into this plugin's scoped keychain entry.
