@@ -2,7 +2,7 @@ import { Editor, MarkdownView, Notice, Plugin } from 'obsidian';
 import { ExplainModal } from './ExplainModal';
 import { GeminiClient } from './GeminiClient';
 import { extractContext } from './ContextExtractor';
-import { SmartExplainSettings, DEFAULT_SETTINGS, SmartExplainSettingsTab, SECRET_ID, LEGACY_SHARED_SECRET_ID } from './SettingsTab';
+import { SmartExplainSettings, DEFAULT_SETTINGS, DEFAULT_MODEL, SmartExplainSettingsTab, SECRET_ID, LEGACY_SHARED_SECRET_ID } from './SettingsTab';
 
 export default class SmartExplainPlugin extends Plugin {
   settings: SmartExplainSettings;
@@ -61,12 +61,14 @@ export default class SmartExplainPlugin extends Plugin {
     const selectedText = editor.getSelection();
     const selectionEnd = editor.getCursor('to');
 
+    const model = this.getModel();
+
     // Create and show modal with loading state
-    const modal = new ExplainModal(this.app, coords, editor, view, selectedText, apiKey, selectionEnd);
+    const modal = new ExplainModal(this.app, coords, editor, view, selectedText, apiKey, selectionEnd, model);
     modal.open();
 
     try {
-      const client = new GeminiClient(apiKey);
+      const client = new GeminiClient(apiKey, model);
 
       // Start streaming - shows empty content area ready for chunks
       modal.startStreaming();
@@ -147,6 +149,15 @@ export default class SmartExplainPlugin extends Plugin {
       if (secret) return secret;
     }
     return this.settings.apiKey ?? '';
+  }
+
+  /**
+   * Resolve the Gemini model ID. The stored value can be blank (the settings
+   * field keeps whatever the user typed, including nothing), so fall back to
+   * the default rather than sending an empty model to the API.
+   */
+  getModel(): string {
+    return this.settings.model?.trim() || DEFAULT_MODEL;
   }
 
   /**

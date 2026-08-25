@@ -10,6 +10,7 @@ An [Obsidian](https://obsidian.md) plugin that gives you AI-powered explanations
 - **Markdown rendering** — responses are rendered as full Obsidian markdown (bold, lists, code blocks, etc.)
 - **Click outside to dismiss** — lightweight, non-intrusive UX
 - **Secure key storage** — your API key is kept in Obsidian's encrypted keychain (Secret Storage), never in plaintext in the plugin's `data.json`
+- **Configurable model** — set any Gemini model ID from the settings tab; defaults to `gemini-3.5-flash-lite`
 
 ## Installation
 
@@ -37,6 +38,22 @@ Then copy `main.js`, `manifest.json`, and `styles.css` into your vault's `.obsid
 2. Open **Settings → Smart Explain** and paste your API key into the **Gemini API Key** field.
 
 That's it — the field writes your key directly into Obsidian's keychain.
+
+### Choosing a model
+
+The **Model ID** field in the same settings tab sets which Gemini model answers
+explanations and footnote summaries. It defaults to `gemini-3.5-flash-lite` —
+the cheapest current model — and leaving the field blank falls back to that
+default.
+
+Any ID from Google's [model list](https://ai.google.dev/gemini-api/docs/models)
+works, with one constraint: Smart Explain requests the `MINIMAL`
+[thinking level](https://ai.google.dev/gemini-api/docs/thinking) to keep
+latency down, and not every model supports it. `gemini-3.5-flash-lite`,
+`gemini-3.5-flash`, and `gemini-3.6-flash` do; `gemini-3.7-flash` and the
+2.5-series models accept only `low`/`medium`/`high` and will reject the
+request. If explanations start erroring right after a model change, that
+mismatch is the likely cause.
 
 ### Where your key is stored
 
@@ -79,7 +96,7 @@ src/
 ├── GeminiClient.ts      # Gemini API wrapper (streaming + non-streaming)
 ├── ExplainModal.ts      # Positioned popover with live markdown rendering
 ├── ContextExtractor.ts  # Extracts heading path, surrounding text, note title
-└── SettingsTab.ts       # Settings UI; reads/writes the API key via Obsidian's keychain
+└── SettingsTab.ts       # Settings UI; API key (via keychain) and model ID
 ```
 
 ## License
